@@ -1924,8 +1924,9 @@ function filterByRole(roleIcon, button) {
 
     rows.forEach(row => {
         const roleCell = row.querySelector("td:nth-child(8)"); // 8ème colonne = Rôle
-        if (!roleCell) return;
-        const cellContent = roleCell.textContent.trim();
+        const cellContent = row.dataset.role || (roleCell ? roleCell.textContent.trim() : "");
+
+        if (!cellContent) return;
         if (roleIcon === "all") {
             row.style.display = "";
         } else {
@@ -1976,32 +1977,23 @@ function applyFilters() {
     const headers = table.querySelectorAll("thead th");
     const rows = table.querySelectorAll("tbody tr");
 
-    // Trouver dynamiquement l'index des colonnes fixes
-    let colIndex = {};
-    headers.forEach((th, i) => {
-        const text = th.textContent.trim().toLowerCase();
-        if (text.includes("coti")) colIndex.coti = i;
-        else if (text.includes("fact")) colIndex.facture = i;
-        else if (text.includes("repris")) colIndex.repris = i;
-        else if (text.includes("terminé")) colIndex.termine = i;
-    });
-
     rows.forEach(row => {
         let visible = true;
+        const isMobileCard = row.querySelectorAll("td").length === 0;
 
-        // Vérifie la présence d'au moins une cellule "missing"
-        const missing = row.querySelector(".missing") !== null;
+        // Vérifie la présence d'au moins un article manquant
+        const missing = isMobileCard
+            ? row.querySelector(".size-item.missing") !== null
+            : row.querySelector("td.missing") !== null;
 
-        // Vérifie Coti Payée
-        const cotiInput = colIndex.coti !== undefined ? row.querySelectorAll("td")[colIndex.coti].querySelector("input") : null;
+        // Vérifie Coti/Facture/Repris (compatible desktop + mobile)
+        const cotiInput = row.querySelector('input[onclick*="cotisation"], input[onchange*="saveCotisation"]');
         const coti = cotiInput && cotiInput.value.trim() !== "";
 
-        // Vérifie Facturé
-        const factureInput = colIndex.facture !== undefined ? row.querySelectorAll("td")[colIndex.facture].querySelector("input") : null;
+        const factureInput = row.querySelector('input[onclick*="facture"], input[onchange*="saveFactureStatus"]');
         const facture = factureInput && factureInput.value.trim() !== "";
 
-        // Vérifie Repris
-        const reprisInput = colIndex.repris !== undefined ? row.querySelectorAll("td")[colIndex.repris].querySelector("input") : null;
+        const reprisInput = row.querySelector('input[onclick*="reprise"], input[onchange*="saveReprise"]');
         const repris = reprisInput && reprisInput.value.trim() !== "";
 
         // Vérifie Terminé
@@ -2040,14 +2032,26 @@ if (showManquant) {
 
     rows.forEach(row => {
         if (row.style.display === "none") return;
+
         const cells = row.querySelectorAll("td");
-        cells.forEach((cell, index) => {
-            if (cell.classList.contains("missing")) {
-                const columnName = headers[index].textContent.trim();
-                const value = cell.textContent.trim();
-                if (!summary[columnName]) summary[columnName] = {};
-                summary[columnName][value] = (summary[columnName][value] || 0) + 1;
-            }
+        if (cells.length > 0) {
+            cells.forEach((cell, index) => {
+                if (cell.classList.contains("missing")) {
+                    const columnName = headers[index].textContent.trim();
+                    const value = cell.textContent.trim();
+                    if (!summary[columnName]) summary[columnName] = {};
+                    summary[columnName][value] = (summary[columnName][value] || 0) + 1;
+                }
+            });
+            return;
+        }
+
+        // Vue mobile : les cellules deviennent des cartes
+        row.querySelectorAll(".size-item.missing").forEach(item => {
+            const columnName = item.querySelector(".size-label")?.textContent.trim() || "Article";
+            const value = item.querySelector(".size-value")?.textContent.trim() || "-";
+            if (!summary[columnName]) summary[columnName] = {};
+            summary[columnName][value] = (summary[columnName][value] || 0) + 1;
         });
     });
 
@@ -2154,6 +2158,7 @@ function initMobileAccordion() {
         const emailCell = cells[6];
         const email = emailCell.querySelector('a') ? emailCell.querySelector('a').outerHTML : emailCell.textContent.trim();
         const role = cells[7].textContent.trim();
+        row.dataset.role = role;
         
         // Articles (colonnes 8 jusqu'aux actions)
         const articles = [];
