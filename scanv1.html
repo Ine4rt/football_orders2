@@ -1,0 +1,1020 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Scan QR Code</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="Scan MKS">
+  <link rel="apple-touch-icon" href="/icon.png">
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      height: 100%;
+      background: #f9f9f9;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    }
+
+    #reader {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #reader > div:first-child {
+      display: flex !important;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+    }
+
+    #reader__scan_region {
+      position: relative;
+      width: 50vmin;
+      height: 50vmin;
+      border-radius: 20px;
+      overflow: hidden;
+    }
+
+    #reader__scan_region > video {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    #scanner-frame {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 50vmin;
+      height: 50vmin;
+      transform: translate(-50%, -50%);
+      border: 2px solid #007BFF;
+      box-shadow: 
+        0 0 0 1px rgba(0, 123, 255, 0.2),
+        0 0 20px rgba(0, 123, 255, 0.3);
+      z-index: 10;
+      border-radius: 20px;
+      pointer-events: none;
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% {
+        box-shadow: 
+          0 0 0 1px rgba(0, 123, 255, 0.2),
+          0 0 20px rgba(0, 123, 255, 0.3);
+      }
+      50% {
+        box-shadow: 
+          0 0 0 1px rgba(0, 123, 255, 0.4),
+          0 0 25px rgba(0, 123, 255, 0.5);
+      }
+    }
+
+    #reader__dashboard_section_csr,
+    #reader__scan_region > div {
+      background: transparent !important;
+      border: none !important;
+      box-shadow: none !important;
+    }
+
+    #scanner-frame::before,
+    #scanner-frame::after {
+      content: '';
+      position: absolute;
+      width: 25px;
+      height: 25px;
+      border: 2px solid #007BFF;
+    }
+
+    #scanner-frame::before {
+      top: -4px;
+      left: -4px;
+      border-right: none;
+      border-bottom: none;
+      border-top-left-radius: 20px;
+    }
+
+    #scanner-frame::after {
+      bottom: -4px;
+      right: -4px;
+      border-left: none;
+      border-top: none;
+      border-bottom-right-radius: 20px;
+    }
+
+    /* Modal plein écran */
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 9999;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.85);
+      justify-content: center;
+      align-items: center;
+      backdrop-filter: blur(10px);
+      animation: fadeInModal 0.3s ease;
+    }
+
+    @keyframes fadeInModal {
+      from {
+        opacity: 0;
+      }
+      to {
+        opacity: 1;
+      }
+    }
+
+    .modal-content {
+      background: white;
+      border-radius: 0;
+      padding: 15px;
+      width: 100vw;
+      height: 100vh;
+      overflow-y: auto;
+      animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    }
+
+    @keyframes slideUp {
+      from {
+        opacity: 0;
+        transform: translateY(30px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .modal-content::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    .modal-content::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.05);
+      border-radius: 10px;
+    }
+
+    .modal-content::-webkit-scrollbar-thumb {
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 10px;
+    }
+
+    .modal-content p#modalText {
+      font-size: 1rem;
+      line-height: 1.5;
+      color: #333;
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .modal-content strong {
+      color: #333;
+      font-weight: 600;
+    }
+
+    .modal-buttons {
+      margin-top: 10px;
+      display: flex;
+      flex-direction: row;
+      gap: 8px;
+      padding-bottom: 10px;
+    }
+
+    .btn {
+      flex: 1;
+      padding: 14px 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .btn::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 0;
+      height: 0;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.3);
+      transform: translate(-50%, -50%);
+      transition: width 0.6s, height 0.6s;
+    }
+
+    .btn:active::before {
+      width: 300px;
+      height: 300px;
+    }
+
+    .btn-ok {
+      background: #28a745;
+      color: white;
+    }
+
+    .btn-ok:active {
+      transform: scale(0.98);
+      background: #218838;
+    }
+
+    .btn-validate {
+      background: #007BFF;
+      color: white;
+    }
+
+    .btn-validate:active {
+      transform: scale(0.98);
+      background: #0056b3;
+    }
+
+    .btn-reprise {
+      background: #f59e0b;
+      color: white;
+    }
+
+    .btn-reprise:active {
+      transform: scale(0.98);
+      background: #d97706;
+    }
+
+    /* Articles Grid - 2 colonnes */
+    .articles-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-top: 12px;
+      margin-bottom: 12px;
+    }
+
+    .article-box {
+      border: 2px solid #e2e8f0;
+      border-radius: 12px;
+      background: white;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      cursor: pointer;
+      position: relative;
+      min-height: 100px;
+    }
+
+    .article-box::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 4px;
+      background: linear-gradient(90deg, #ef4444, #dc2626);
+      transform: scaleX(0);
+      transition: transform 0.3s ease;
+    }
+
+    .article-box:active {
+      transform: scale(0.97);
+    }
+
+    .article-box:active::before {
+      transform: scaleX(1);
+    }
+
+    .article-label {
+      background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+      color: white;
+      font-size: 0.9rem;
+      font-weight: 700;
+      padding: 10px 6px;
+      text-align: center;
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+    }
+
+    .article-size {
+      font-size: 1.4rem;
+      color: #334155;
+      font-weight: 700;
+      text-align: center;
+      padding: 14px 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+    }
+
+    .missing {
+      background: #ffcccc !important;
+      border-color: #cc0000 !important;
+      animation: shake 0.5s ease;
+    }
+
+    .missing .article-label {
+      background: #cc0000;
+    }
+
+    .missing .article-size {
+      color: #cc0000;
+    }
+
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-5px); }
+      75% { transform: translateX(5px); }
+    }
+
+    .order-header {
+      background: white;
+      border-radius: 25px;
+      padding: 15px;
+      margin-bottom: 12px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+      border: 2px solid #ccc;
+      font-size: 1rem;
+      line-height: 1.6;
+    }
+
+    .order-header strong:first-child {
+      display: block;
+      font-size: 1.4rem;
+      color: #333;
+      margin-bottom: 10px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #f0f0f0;
+    }
+
+    @keyframes scan-line {
+      0% {
+        top: 0;
+      }
+      50% {
+        top: 100%;
+      }
+      100% {
+        top: 0;
+      }
+    }
+
+    .scan-line {
+      position: absolute;
+      left: 0;
+      width: 100%;
+      height: 2px;
+      background: linear-gradient(90deg, 
+        transparent, 
+        rgba(0, 123, 255, 0.8), 
+        transparent);
+      animation: scan-line 2s linear infinite;
+      z-index: 11;
+      pointer-events: none;
+    }
+
+    /* Modal Signature */
+    #signatureModal {
+      display: none;
+      position: fixed;
+      z-index: 10000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.95);
+      justify-content: center;
+      align-items: center;
+    }
+
+    .signature-content {
+      background: white;
+      border-radius: 0;
+      padding: 15px;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .signature-header {
+      text-align: center;
+      margin-bottom: 15px;
+    }
+
+    .signature-header h2 {
+      font-size: 1.5rem;
+      color: #0f172a;
+      margin-bottom: 8px;
+    }
+
+    .signature-header p {
+      color: #64748b;
+      font-size: 1.1rem;
+    }
+
+    #signatureCanvas {
+      border: 3px solid #e2e8f0;
+      border-radius: 12px;
+      background: white;
+      touch-action: none;
+      flex: 1;
+      margin-bottom: 15px;
+      width: 100%;
+      max-height: calc(100vh - 250px);
+    }
+
+    .signature-buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding-bottom: 10px;
+    }
+
+    .btn-clear {
+      background: #6c757d;
+      color: white;
+    }
+
+    .btn-clear:active {
+      transform: scale(0.98);
+      background: #5a6268;
+    }
+
+    .btn-confirm-signature {
+      background: #28a745;
+      color: white;
+    }
+
+    .btn-confirm-signature:active {
+      transform: scale(0.98);
+      background: #218838;
+    }
+  </style>
+</head>
+<body>
+  <div id="reader"></div>
+  <div id="scanner-frame">
+    <div class="scan-line"></div>
+  </div>
+
+  <!-- Modal Principal -->
+  <div class="modal" id="confirmModal">
+    <div class="modal-content">
+      <p id="modalText">Commande terminée ?</p>
+      <div class="modal-buttons">
+        <button class="btn btn-validate" id="validateBtn">Valider</button>
+        <button class="btn btn-ok" id="okBtn">Terminé</button>
+        <button class="btn btn-reprise" id="repriseBtn">Repris</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Signature -->
+  <div id="signatureModal">
+    <div class="signature-content">
+      <div class="signature-header">
+        <h2>Signature requise</h2>
+        <p>Veuillez signer ci-dessous</p>
+      </div>
+      <canvas id="signatureCanvas"></canvas>
+      <div class="signature-buttons">
+        <button class="btn btn-clear" id="clearSignature">Effacer</button>
+        <button class="btn btn-confirm-signature" id="confirmSignature">Confirmer</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentOrderId = null;
+    let currentEmail = null;
+    let currentOrderData = null;
+    let isDrawing = false;
+    let signatureCanvas = null;
+    let signatureCtx = null;
+    let lastX = 0;
+    let lastY = 0;
+
+    // Initialisation du canvas de signature
+    function initSignatureCanvas() {
+      signatureCanvas = document.getElementById('signatureCanvas');
+      if (!signatureCanvas) return;
+      
+      signatureCtx = signatureCanvas.getContext('2d');
+      
+      // Redimensionner le canvas
+      resizeCanvas();
+      window.addEventListener('resize', resizeCanvas);
+
+      // Configuration du style de dessin
+      signatureCtx.strokeStyle = '#0f172a';
+      signatureCtx.lineWidth = 3;
+      signatureCtx.lineCap = 'round';
+      signatureCtx.lineJoin = 'round';
+
+      // Supprimer tous les anciens listeners
+      signatureCanvas.replaceWith(signatureCanvas.cloneNode(true));
+      signatureCanvas = document.getElementById('signatureCanvas');
+      signatureCtx = signatureCanvas.getContext('2d');
+
+      // Configuration du style après clone
+      signatureCtx.strokeStyle = '#0f172a';
+      signatureCtx.lineWidth = 3;
+      signatureCtx.lineCap = 'round';
+      signatureCtx.lineJoin = 'round';
+
+      // Events tactiles (prioritaires pour mobile)
+      signatureCanvas.addEventListener('touchstart', handleTouchStart, false);
+      signatureCanvas.addEventListener('touchmove', handleTouchMove, false);
+      signatureCanvas.addEventListener('touchend', stopDrawing, false);
+      signatureCanvas.addEventListener('touchcancel', stopDrawing, false);
+
+      // Events souris (pour desktop)
+      signatureCanvas.addEventListener('mousedown', startDrawing, false);
+      signatureCanvas.addEventListener('mousemove', draw, false);
+      signatureCanvas.addEventListener('mouseup', stopDrawing, false);
+      signatureCanvas.addEventListener('mouseleave', stopDrawing, false);
+    }
+
+    function resizeCanvas() {
+      if (!signatureCanvas) return;
+      const parent = signatureCanvas.parentElement;
+      const rect = parent.getBoundingClientRect();
+      
+      // Sauvegarder le contenu actuel
+      const imageData = signatureCtx.getImageData(0, 0, signatureCanvas.width, signatureCanvas.height);
+      
+      signatureCanvas.width = rect.width - 30;
+      signatureCanvas.height = rect.height - 180;
+      
+      // Restaurer le style
+      signatureCtx.strokeStyle = '#0f172a';
+      signatureCtx.lineWidth = 3;
+      signatureCtx.lineCap = 'round';
+      signatureCtx.lineJoin = 'round';
+      
+      // Restaurer le contenu
+      signatureCtx.putImageData(imageData, 0, 0);
+    }
+
+    function getPos(e) {
+      const rect = signatureCanvas.getBoundingClientRect();
+      if (e.touches && e.touches.length > 0) {
+        return {
+          x: e.touches[0].clientX - rect.left,
+          y: e.touches[0].clientY - rect.top
+        };
+      }
+      return {
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top
+      };
+    }
+
+    function startDrawing(e) {
+      e.preventDefault();
+      isDrawing = true;
+      const pos = getPos(e);
+      lastX = pos.x;
+      lastY = pos.y;
+      signatureCtx.beginPath();
+      signatureCtx.moveTo(lastX, lastY);
+    }
+
+    function draw(e) {
+      e.preventDefault();
+      if (!isDrawing) return;
+      
+      const pos = getPos(e);
+      signatureCtx.lineTo(pos.x, pos.y);
+      signatureCtx.stroke();
+      
+      lastX = pos.x;
+      lastY = pos.y;
+    }
+
+    function handleTouchStart(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      isDrawing = true;
+      const pos = getPos(e);
+      lastX = pos.x;
+      lastY = pos.y;
+      signatureCtx.beginPath();
+      signatureCtx.moveTo(lastX, lastY);
+    }
+
+    function handleTouchMove(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!isDrawing) return;
+      
+      const pos = getPos(e);
+      signatureCtx.lineTo(pos.x, pos.y);
+      signatureCtx.stroke();
+      
+      lastX = pos.x;
+      lastY = pos.y;
+    }
+
+    function stopDrawing(e) {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      isDrawing = false;
+      signatureCtx.beginPath();
+    }
+
+    function clearSignature() {
+      if (!signatureCanvas || !signatureCtx) return;
+      signatureCtx.clearRect(0, 0, signatureCanvas.width, signatureCanvas.height);
+    }
+
+    // Initialiser au chargement
+    window.addEventListener('load', () => {
+      setTimeout(initSignatureCanvas, 100);
+    });
+
+    document.getElementById('clearSignature').addEventListener('click', clearSignature);
+
+    document.getElementById('confirmSignature').addEventListener('click', () => {
+      // Convertir la signature en image base64
+      const signatureData = signatureCanvas.toDataURL('image/png');
+      
+      // Fermer le modal de signature
+      document.getElementById('signatureModal').style.display = 'none';
+      
+      // Envoyer la signature et mettre à jour la commande
+      saveSignatureAndUpdateOrder(currentOrderId, currentEmail, signatureData);
+    });
+
+    function saveSignatureAndUpdateOrder(orderId, email, signatureData) {
+      if (!currentOrderData) {
+        alert('Erreur : données de commande manquantes');
+        return;
+      }
+      
+      const date = new Date().toISOString().split('T')[0];
+      const orderNumber = currentOrderData.order_number || 'N/A';
+      const filename = `${currentOrderData.club}-${currentOrderData.name}-${currentOrderData.firstname}-${orderNumber}-${date}.jpg`;
+      
+      // Envoyer la signature au serveur
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', 'save_signature.php', true);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.send(JSON.stringify({
+        orderId: orderId,
+        signature: signatureData,
+        filename: filename
+      }));
+
+      xhr.onload = function() {
+        try {
+          const response = JSON.parse(xhr.responseText);
+          if (response.success) {
+            // Mettre à jour le statut de reprise
+            updateOrderReprise(orderId, email, () => {
+              alert('Commande marquée comme reprise avec signature');
+              document.getElementById('signatureModal').style.display = 'none';
+              restartScanner();
+            });
+          } else {
+            alert('Erreur lors de la sauvegarde de la signature : ' + (response.message || 'Inconnue'));
+          }
+        } catch (e) {
+          console.error('Erreur JSON :', e.message);
+          alert('Erreur lors de la sauvegarde de la signature');
+        }
+      };
+
+      xhr.onerror = () => {
+        console.error('Erreur AJAX save_signature');
+        alert('Erreur réseau lors de la sauvegarde de la signature');
+      };
+    }
+
+    function showConfirmationModal(orderId, email) {
+      currentOrderId = orderId;
+      currentEmail = email;
+      document.getElementById('modalText').innerHTML = `Commande terminée ?<br>Envoyer un email à : <strong>${email}</strong>`;
+      document.getElementById('confirmModal').style.display = 'flex';
+    }
+
+    function hideModal() {
+      document.getElementById('confirmModal').style.display = 'none';
+    }
+
+    document.getElementById('okBtn').addEventListener('click', () => {
+      const confirmed = confirm("Es-tu sûr de vouloir marquer cette commande comme terminée ?");
+      if (confirmed) {
+        hideModal();
+        html5QrCode.stop().then(() => {
+          updateOrderCompleted(currentOrderId, currentEmail, () => {
+            sendCompletionEmail(currentOrderId, currentEmail);
+            restartScanner();
+          });
+        }).catch(console.error);
+      }
+    });
+
+    document.getElementById('validateBtn').addEventListener('click', () => {
+      hideModal();
+      html5QrCode.stop().then(() => {
+        restartScanner();
+      }).catch(err => {
+        console.error("Erreur à l'arrêt du scan :", err);
+        restartScanner();
+      });
+    });
+
+    document.getElementById('repriseBtn').addEventListener('click', () => {
+      // Fermer le modal principal et ouvrir le modal de signature
+      document.getElementById('confirmModal').style.display = 'none';
+      document.getElementById('signatureModal').style.display = 'flex';
+      
+      // Attendre que le modal soit visible avant d'initialiser le canvas
+      setTimeout(() => {
+        initSignatureCanvas();
+        clearSignature();
+      }, 100);
+      
+      html5QrCode.stop().catch(console.error);
+    });
+
+    function sendCompletionEmail(orderId, email) {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', 'send_email.php', true);
+      xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+      xhr.send('orderId=' + encodeURIComponent(orderId) + '&email=' + encodeURIComponent(email));
+      xhr.onload = function () {
+        try {
+          const response = JSON.parse(xhr.responseText);
+          alert(response.success ? 'Email envoyé avec succès !' : 'Erreur : ' + (response.error || 'inconnue'));
+        } catch (e) {
+          console.error('Erreur JSON :', e.message);
+        }
+      };
+      xhr.onerror = () => console.error('Erreur AJAX');
+    }
+
+    function updateOrderCompleted(orderId, email, callback) {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', 'update_order.php', true);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.send(JSON.stringify({ orderId, field: 'completed', value: 1, email }));
+      xhr.onload = function () {
+        try {
+          const response = JSON.parse(xhr.responseText);
+          if (response.success) callback();
+          else alert("Erreur mise à jour commande : " + (response.message || 'Inconnue'));
+        } catch (e) {
+          console.error("Erreur JSON :", e.message);
+        }
+      };
+      xhr.onerror = () => console.error("Erreur AJAX update_order");
+    }
+
+    const clubArticlesConfig = {
+      "ellas": ["Veste", "Pantalon", "Kit", "Bas", "Short", "Polo"],
+      "union hutoise": ["Veste", "Pantalon", "Maillot", "Short", "Bas"],
+      "bas-oha": ["Veste", "Pantalon", "Maillot", "Sous-maillot", "Bas", "Short", "K-Way","Bas2"],
+      "rfcb sprimont": ["Veste", "Pantalon", "Maillot", "Short", "Polo", "Bas"],
+      "jsn": ["Veste", "Pantalon"],
+      "MKSGK": ["Sweat", "T-shirt", "Gants"]
+    };
+
+    const articleValueMapping = {
+      "Veste": "jacket_size",
+      "Pantalon": "pants_size",
+      "Kit": "kit_size",
+      "Sous-maillot": "under_shirt_size",
+      "Bas": "bas_size",
+      "Maillot": "jersey_size",
+      "Short": "short_size",
+      "Polo": "polo_size",
+      "K-Way": "option_kway",
+      "Bas2": "option_bas",
+      "Initiales": "initials_requested",
+      "Sweat": "jacket_size",
+      "T-shirt": "jersey_size",
+      "Gants": "bas_size",
+    };
+
+    const roleArticlesConfig = {
+      "Joueur": ["Veste", "Pantalon", "Maillot", "Short", "Bas"],
+      "Joueur-WBO": ["Veste", "Pantalon", "Bas", "Sous-maillot", "Maillot", "Short", "K-Way", "Bas2"],
+      "Keeper-WBO": ["Veste", "Pantalon", "Bas", "Sous-maillot", "Maillot", "Short", "K-Way", "Bas2"],
+      "U10-U21": ["Veste", "Pantalon", "Polo", "Bas", "Short", "Maillot"],
+      "Entraineur": ["Veste", "Pantalon", "Short", "Maillot"],
+      "Ellas-Entraineur": ["Veste", "Pantalon", "Short", "Polo"],
+      "Ellas-Keeper": ["Veste", "Pantalon", "Kit"],
+      "Ellas-Joueur": ["Veste", "Pantalon", "Kit", "Bas"],
+      "Joueur-JSN": ["Veste", "Pantalon"],
+      "Entraineur-JSN": ["Veste", "Pantalon"],
+      "Joueur-Hannut": ["Veste", "Pantalon", "Bas", "Maillot"],
+      "Keeper-Hannut": ["Veste", "Pantalon", "Bas", "Maillot"],
+      "Keeper-MKSGK": ["Sweat", "T-shirt", "Gants"],
+    };
+
+    function onScanSuccess(decodedText) {
+      try {
+        navigator.vibrate?.(200);
+
+        const data = JSON.parse(decodedText);
+        const { orderId, email } = data;
+        if (!orderId || !email) return alert("QR Code invalide ou incomplet.");
+
+        // Arrêter le scanner avant de faire les requêtes
+        html5QrCode.stop().then(() => {
+          fetch('update_scan.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ orderId: orderId, scan: 1 })
+          }).then(res => res.json())
+            .then(resp => {
+              if (!resp.success) {
+                console.warn('Erreur mise à jour scan:', resp.message);
+              }
+              return fetch('get_order_details.php?orderId=' + encodeURIComponent(orderId));
+            })
+            .then(res => res.json())
+            .then(response => {
+              if (!response.success) {
+                alert("Erreur : " + response.message);
+                restartScanner();
+                return;
+              }
+
+              const order = response.order;
+              const roleKey = order.role;
+              const combinedArticles = roleArticlesConfig[roleKey] || [];
+
+              let articlesHtml = "";
+
+              combinedArticles.forEach(label => {
+                const key = articleValueMapping[label];
+                let value = order[key];
+                let isMissing = false;
+
+                if (label === "K-Way") {
+                  value = order.option_kway || "Non";
+                  isMissing = order.kway_missing == 1;
+                } else if (label === "Initiales") {
+                  value = order.initials_requested ? order.initials : "Non";
+                  isMissing = order.initials_missing == 1;
+                } else {
+                  const baseKey = key.replace('_size', '');
+                  isMissing = order[baseKey + '_missing'] == 1;
+                }
+
+                articlesHtml += renderArticle(label, value || "—", isMissing);
+              });
+
+              let display = `
+                <div class="order-header">
+                  <strong>${order.club}</strong>
+                  <strong>Nom :</strong> ${order.firstname} ${order.name}<br>
+                  <strong>Catégorie :</strong> ${order.category}<br>
+                  <strong>Rôle :</strong> ${order.role}
+                </div>
+
+                <div class="articles-grid">
+                  ${articlesHtml}
+                </div>
+              `;
+
+              document.getElementById('modalText').innerHTML = display;
+
+              currentOrderId = order.id;
+              currentEmail = order.email;
+              currentOrderData = order;
+              document.getElementById('confirmModal').style.display = 'flex';
+              
+              document.querySelectorAll('.article-box').forEach(box => {
+                box.addEventListener('click', () => {
+                  const label = box.dataset.label;
+                  const field = articleValueMapping[label];
+                  const baseField = field.replace('_size', '').replace('option_', '').replace('initials_requested', 'initials');
+                  const missingKey = baseField + '_missing';
+
+                  const isNowMissing = !box.classList.contains('missing');
+                  box.classList.toggle('missing', isNowMissing);
+
+                  const xhr = new XMLHttpRequest();
+                  xhr.open('POST', 'update_order.php', true);
+                  xhr.setRequestHeader('Content-Type', 'application/json');
+                  xhr.send(JSON.stringify({
+                    orderId: currentOrderId,
+                    field: missingKey,
+                    value: isNowMissing ? 1 : 0
+                  }));
+
+                  xhr.onload = () => {
+                    try {
+                      const res = JSON.parse(xhr.responseText);
+                      if (!res.success) alert("Erreur mise à jour : " + (res.message || 'Inconnue'));
+                    } catch (e) {
+                      console.error("Erreur JSON réponse toggle_missing :", e);
+                    }
+                  };
+                  xhr.onerror = () => console.error("Erreur AJAX toggle_missing");
+                });
+              });
+            })
+            .catch(err => {
+              console.error("Erreur AJAX :", err);
+              alert("Erreur lors de la récupération de la commande.");
+              restartScanner();
+            });
+        }).catch(err => {
+          console.error("Erreur arrêt scanner:", err);
+          alert("Erreur lors de la récupération de la commande.");
+        });
+      } catch (err) {
+        alert("QR Code invalide : JSON attendu.");
+        console.error("Erreur JSON :", err);
+      }
+    }
+
+    const html5QrCode = new Html5Qrcode("reader");
+    const config = { fps: 10 };
+
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } } })
+      .then(stream => {
+        const track = stream.getVideoTracks()[0];
+        const deviceId = track.getSettings().deviceId;
+        stream.getTracks().forEach(t => t.stop());
+        html5QrCode.start({ deviceId: { exact: deviceId } }, config, onScanSuccess, err => console.warn("Erreur scan :", err));
+      })
+      .catch(err => {
+        console.error("Accès caméra refusé :", err);
+        alert("Impossible d'accéder à la caméra. Vérifie les permissions.");
+      });
+
+    function restartScanner() {
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } } })
+        .then(stream => {
+          const track = stream.getVideoTracks()[0];
+          const deviceId = track.getSettings().deviceId;
+          stream.getTracks().forEach(t => t.stop());
+          html5QrCode.start({ deviceId: { exact: deviceId } }, config, onScanSuccess, err => console.warn("Erreur scan :", err));
+        })
+        .catch(err => {
+          console.error("Redémarrage caméra échoué :", err);
+          alert("Impossible de redémarrer la caméra.");
+        });
+    }
+
+    function renderArticle(label, size, isMissing = false) {
+      return `
+        <div class="article-box${isMissing ? ' missing' : ''}" data-label="${label}">
+          <div class="article-label">${label}</div>
+          <div class="article-size">${size}</div>
+        </div>
+      `;
+    }
+
+    function updateOrderReprise(orderId, email, callback) {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', 'update_order.php', true);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.send(JSON.stringify({ orderId, field: 'reprise', value: 1, email }));
+      xhr.onload = function () {
+        try {
+          const response = JSON.parse(xhr.responseText);
+          if (response.success) callback();
+          else alert("Erreur mise à jour commande : " + (response.message || 'Inconnue'));
+        } catch (e) {
+          console.error("Erreur JSON :", e.message);
+        }
+      };
+      xhr.onerror = () => console.error("Erreur AJAX update_order");
+    }
+  </script>
+</body>
+</html>
